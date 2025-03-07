@@ -1,35 +1,6 @@
 version: '3.9'
 
 services:
-  wordpress:
-    image: wordpress:latest
-    container_name: wordpress
-    restart: always
-    environment:
-      WORDPRESS_DB_HOST: db
-      WORDPRESS_DB_USER: wordpress
-      WORDPRESS_DB_PASSWORD: wordpress
-      WORDPRESS_DB_NAME: wordpress
-    volumes:
-      - ./config/uploads.ini:/usr/local/etc/php/conf.d/uploads.ini
-      - wordpress_data:/var/www/html
-    networks:
-      - wordpress_network
-
-  db:
-    image: mysql:5.7
-    container_name: mysql
-    restart: always
-    environment:
-      MYSQL_DATABASE: wordpress
-      MYSQL_USER: wordpress
-      MYSQL_PASSWORD: wordpress
-      MYSQL_ROOT_PASSWORD: rootpassword
-    volumes:
-      - db_data:/var/lib/mysql
-    networks:
-      - wordpress_network
-
   nginx:
     image: nginx:latest
     container_name: nginx
@@ -53,15 +24,11 @@ services:
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
       - ./certbot-renew.sh:/certbot-renew.sh
-#    entrypoint: /certbot-renew.sh
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do sleep 12h & wait $${!}; certbot renew; done;'"
     networks:
       - wordpress_network
 
 volumes:
-  wordpress_data:
-  db_data:
-  webroot:
   static_volume:
     external: true
 
