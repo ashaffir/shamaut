@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  wordpress_shamaut:
+    image: wordpress:latest
+    container_name: wordpress_shamaut
+    restart: always
+    environment:
+      WORDPRESS_DB_HOST: db_shamaut
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress_shamaut
+    volumes:
+      - wordpress_shamaut_data:/var/www/html
+      - ./custom-php.ini:/usr/local/etc/php/conf.d/custom-php.ini
+    ports:
+      - "10.100.102.120:30303:80"
+    networks:
+      - actappon_wordpress_network
+
+  db_shamaut:
+    image: mysql:5.7
+    container_name: mysql_shamaut
+    restart: always
+    environment:
+      MYSQL_DATABASE: wordpress_shamaut
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
+      MYSQL_ROOT_PASSWORD: rootpassword
+    volumes:
+      - db_shamaut_data:/var/lib/mysql
+    networks:
+      - actappon_wordpress_network
+
+volumes:
+  wordpress_shamaut_data:
+  db_shamaut_data:
+
+networks:
+  actappon_wordpress_network:
+    external: true
+
