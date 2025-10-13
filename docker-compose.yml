@@ -50,9 +50,13 @@ services:
     volumes:
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
-    entrypoint: "/bin/sh -c 'while :; do certbot renew --quiet --post-hook \"nginx -s reload\"; sleep 12h; done'"
-
-
+    entrypoint: >
+      /bin/sh -c '
+      while :; do
+        certbot renew --quiet &&
+        docker exec nginx nginx -s reload;
+        sleep 12h;
+      done'
     networks:
       - actappon_wordpress_network
 
