@@ -15,6 +15,13 @@ Architecture is based on Docker services: Wordpress, MySQL DB and NGINX web serv
 - in the wordpress admin panel, install the "All in one WP..." plugin for importing the websites
 - The location of the backup website is in the Google drive (alfred.shaffir), under Adi -> shamaut
 
+
+## SSL Certificate
+The system should automatically renew the SSL certificate. There is a cron job that runs at 3 AM and PM the script renew-certs.sh
+
+To check the SSL operations: 
+sudo ls -la /var/log/cert-renewal.log
+
 ### Creating the SSL certificate
 1. Modify the default.conf file (for the Nginx), not to include the pem files (remove the secured server section)
 2. Start the docker-compose with all that is inside
