@@ -3,6 +3,25 @@ This is a simple Wordpress website.
 Architecture is based on Docker services: Wordpress, MySQL DB and NGINX web server.
 
 ## Setup
+### Automated Ubuntu deployment
+On a fresh Ubuntu server, clone this repository and run:
+
+```bash
+./migrate.sh
+```
+
+The script installs Docker if needed, creates the certificate folders, starts the
+WordPress/MySQL/Nginx/Certbot stack, requests the Let's Encrypt certificate, and
+installs the renewal cron job.
+
+Useful overrides:
+
+```bash
+LETSENCRYPT_EMAIL=you@example.com CERTBOT_DOMAINS=shamaut.com,www.shamaut.com ./migrate.sh
+ISSUE_CERT=0 ./migrate.sh
+CERTBOT_STAGING=1 ./migrate.sh
+```
+
 ### Directory structure
 ```
 ├── README.md
@@ -50,6 +69,5 @@ either directly to the certbot/conf/live/
 
 ### Run the docker compose
 docker-compose up -d
-
 
 

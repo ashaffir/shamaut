@@ -1,16 +1,37 @@
-#!/bin/bash
-# Renew SSL certificates and reload nginx
+#!/usr/bin/env bash
+set -euo pipefail
 
-echo "Checking for certificate renewal..."
-docker-compose exec -T certbot certbot renew --quiet
+PROJECT_NAME="${PROJECT_NAME:-shamaut}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
 
-# If renewal was successful or certificates are still valid
-if [ $? -eq 0 ] || [ $? -eq 1 ]; then
-  echo "Reloading nginx..."
-  docker-compose exec -T nginx nginx -s reload
-  echo "Done!"
+if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+  SUDO=()
 else
-  echo "Certificate renewal failed!"
-  exit 1
+  SUDO=(sudo)
 fi
 
+docker_cmd() {
+  "${SUDO[@]}" docker "$@"
+}
+
+compose() {
+  if docker_cmd compose version >/dev/null 2>&1; then
+    docker_cmd compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" "$@"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    "${SUDO[@]}" docker-compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" "$@"
+  else
+    echo "Docker Compose is not installed." >&2
+    exit 1
+  fi
+}
+
+echo "Checking for certificate renewal..."
+if compose exec -T certbot certbot renew --quiet; then
+  echo "Reloading nginx..."
+  compose exec -T nginx nginx -s reload
+  echo "Done!"
+else
+  echo "Certificate renewal failed!" >&2
+  exit 1
+fi
