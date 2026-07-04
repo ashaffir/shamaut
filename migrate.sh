@@ -6,6 +6,8 @@ set -euo pipefail
 #   DOMAIN=shamaut.com
 #   CERTBOT_DOMAINS=shamaut.com,www.shamaut.com
 #   LETSENCRYPT_EMAIL=alfreds@actappon.com
+#   BACKUP_FILE=/home/alfreds/site.wpress
+#   AI1WM_IMPORT_LIMIT_BYTES=1073741824
 #   ISSUE_CERT=1              # set to 0 to keep the temporary certificate
 #   CERTBOT_STAGING=0         # set to 1 to use Let's Encrypt staging
 #   INSTALL_DOCKER=1          # set to 0 to require Docker to already exist
@@ -14,6 +16,8 @@ set -euo pipefail
 DOMAIN="${DOMAIN:-shamaut.com}"
 CERTBOT_DOMAINS="${CERTBOT_DOMAINS:-shamaut.com,www.shamaut.com}"
 LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL:-alfreds@actappon.com}"
+BACKUP_FILE="${BACKUP_FILE:-}"
+AI1WM_IMPORT_LIMIT_BYTES="${AI1WM_IMPORT_LIMIT_BYTES:-}"
 ISSUE_CERT="${ISSUE_CERT:-1}"
 CERTBOT_STAGING="${CERTBOT_STAGING:-0}"
 INSTALL_DOCKER="${INSTALL_DOCKER:-1}"
@@ -196,6 +200,92 @@ issue_or_renew_certificate() {
   fi
 }
 
+wait_for_wordpress_files() {
+  local attempts=0
+
+  until compose exec -T shamaut_wordpress test -f /var/www/html/wp-config.php >/dev/null 2>&1; do
+    attempts=$((attempts + 1))
+    if [[ "$attempts" -ge 30 ]]; then
+      die "WordPress files were not ready after 60 seconds."
+    fi
+    sleep 2
+  done
+}
+
+set_ai1wm_import_limit() {
+  local limit_bytes="$1"
+
+  compose exec -T shamaut_wordpress sh -s -- "$limit_bytes" <<'AI1WM_LIMIT'
+set -eu
+limit_bytes="$1"
+config="/var/www/html/wp-config.php"
+
+if grep -q "AI1WM_MAX_FILE_SIZE" "$config"; then
+  sed -i "s/define('AI1WM_MAX_FILE_SIZE'.*/define('AI1WM_MAX_FILE_SIZE', ${limit_bytes});/" "$config"
+else
+  sed -i "/require_once ABSPATH/i define('AI1WM_MAX_FILE_SIZE', ${limit_bytes});" "$config"
+fi
+
+grep -q "AI1WM_MAX_FILE_SIZE" "$config"
+AI1WM_LIMIT
+}
+
+stage_wordpress_backup_if_requested() {
+  [[ -n "$BACKUP_FILE" ]] || return
+  [[ -f "$BACKUP_FILE" ]] || die "BACKUP_FILE does not exist: $BACKUP_FILE"
+
+  local backup_filename backup_size import_limit js_filename
+  backup_filename="$(basename "$BACKUP_FILE")"
+  backup_size="$(stat -c%s "$BACKUP_FILE")"
+
+  if [[ -n "$AI1WM_IMPORT_LIMIT_BYTES" ]]; then
+    [[ "$AI1WM_IMPORT_LIMIT_BYTES" =~ ^[0-9]+$ ]] || die "AI1WM_IMPORT_LIMIT_BYTES must be an integer."
+    import_limit="$AI1WM_IMPORT_LIMIT_BYTES"
+  else
+    import_limit=$((backup_size + 67108864))
+    if (( import_limit < 1073741824 )); then
+      import_limit=1073741824
+    fi
+  fi
+
+  if (( import_limit <= backup_size )); then
+    die "AI1WM_IMPORT_LIMIT_BYTES must be larger than the backup file size."
+  fi
+
+  log "Staging WordPress backup for All-in-One WP Migration."
+  wait_for_wordpress_files
+
+  compose exec -T shamaut_wordpress mkdir -p /var/www/html/wp-content/ai1wm-backups
+  docker_cmd cp "$BACKUP_FILE" "shamaut_wordpress:/var/www/html/wp-content/ai1wm-backups/$backup_filename"
+  compose exec -T shamaut_wordpress chown -R www-data:www-data /var/www/html/wp-content/ai1wm-backups
+  set_ai1wm_import_limit "$import_limit"
+
+  js_filename="${backup_filename//\\/\\\\}"
+  js_filename="${js_filename//\'/\\\'}"
+
+  cat <<RESTORE_INSTRUCTIONS
+
+Backup staged in the WordPress container:
+  /var/www/html/wp-content/ai1wm-backups/$backup_filename
+
+To restore it, open WordPress admin in your browser, go to:
+  All-in-One WP Migration -> Backups
+
+Then open DevTools Console on that page and run:
+
+var filename = '$js_filename';
+var importer = new Ai1wm.Import();
+var storage = Ai1wm.Util.random(12);
+var options = Ai1wm.Util.form('#ai1wm-backups-form').concat({name: 'storage', value: storage}).concat({name: 'archive', value: filename});
+importer.setParams(options);
+importer.start();
+
+After restore finishes, check the WordPress site URL:
+  sudo docker compose exec -T shamaut_db mysql -uwordpress -pwordpress shamaut_wordpress -e "SELECT option_name, option_value FROM wp_options WHERE option_name IN ('siteurl','home');"
+
+RESTORE_INSTRUCTIONS
+}
+
 install_renewal_cron() {
   local quoted_dir
   quoted_dir="$(printf '%q' "$SCRIPT_DIR")"
@@ -225,6 +315,7 @@ main() {
   log "Starting the WordPress, MySQL, Nginx, and Certbot containers."
   compose up -d
 
+  stage_wordpress_backup_if_requested
   issue_or_renew_certificate
   install_renewal_cron
 

@@ -20,6 +20,26 @@ Useful overrides:
 LETSENCRYPT_EMAIL=you@example.com CERTBOT_DOMAINS=shamaut.com,www.shamaut.com ./migrate.sh
 ISSUE_CERT=0 ./migrate.sh
 CERTBOT_STAGING=1 ./migrate.sh
+BACKUP_FILE=/home/alfreds/site-backup.wpress ./migrate.sh
+```
+
+When `BACKUP_FILE` is set, the script copies the `.wpress` backup into the
+WordPress container's `ai1wm-backups` directory, fixes file ownership, raises
+the All-in-One WP Migration import limit, and prints the browser console command
+needed to start the restore from the WordPress admin session.
+
+After the restore completes, verify the WordPress URL values:
+
+```bash
+sudo docker compose exec -T shamaut_db mysql -uwordpress -pwordpress shamaut_wordpress \
+  -e "SELECT option_name, option_value FROM wp_options WHERE option_name IN ('siteurl','home');"
+```
+
+If they point to the server IP instead of the domain, fix them:
+
+```bash
+sudo docker compose exec -T shamaut_db mysql -uwordpress -pwordpress shamaut_wordpress \
+  -e "UPDATE wp_options SET option_value='https://shamaut.com' WHERE option_name IN ('siteurl','home');"
 ```
 
 ### Directory structure
@@ -69,5 +89,4 @@ either directly to the certbot/conf/live/
 
 ### Run the docker compose
 docker-compose up -d
-
 
